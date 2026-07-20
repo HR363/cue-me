@@ -34,10 +34,7 @@ async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTok
   const OpenAI = require('openai');
   const client = new OpenAI({ 
     apiKey, 
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    defaultHeaders: {
-      'User-Agent': 'cue-me'
-    }
+    baseURL: 'https://integrate.api.nvidia.com/v1'
   });
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
@@ -56,23 +53,13 @@ async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTok
     messages, 
     stream: true, 
     max_tokens: maxTokens,
-    temperature: 1,
-    top_p: 0.95,
-    extra_body: {
-      chat_template_kwargs: {
-        thinking: true,
-        reasoning_effort: 'high'
-      }
-    }
+    temperature: 0.7,
+    top_p: 0.9
   });
   let full = '';
   for await (const part of stream) {
     const delta = part.choices && part.choices[0] && part.choices[0].delta;
     if (!delta) continue;
-    // Nemotron/DeepSeek-style reasoning models emit reasoning_content separately from content.
-    // We skip reasoning tokens and only stream the final answer, matching the other providers.
-    const reasoning = delta.reasoning_content;
-    if (reasoning) onToken(`[reasoning: ${reasoning}]\n`);
     const d = delta.content;
     if (d) { full += d; onToken(d); }
   }
