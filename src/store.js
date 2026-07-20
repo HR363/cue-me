@@ -8,11 +8,12 @@ const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', nvidia: '', deepgram: '' },
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
-    gemini: { fast: 'gemini-1.5-flash', smart: 'gemini-1.5-pro' }
+    gemini: { fast: 'gemini-1.5-flash', smart: 'gemini-1.5-pro' },
+    nvidia: { fast: 'deepseek-ai/deepseek-v4-flash', smart: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }
   }
 };
 
