@@ -33,15 +33,29 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
 async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
   const OpenAI = require('openai');
   
-  // Debug: log the request details
+  console.log('\n========== NVIDIA API DEBUG ==========');
+  console.log('[nvidia] Starting request...');
   console.log('[nvidia] Endpoint: https://integrate.api.nvidia.com/v1');
   console.log('[nvidia] Model:', model);
-  console.log('[nvidia] API Key (first 20 chars):', apiKey ? apiKey.substring(0, 20) + '...' : 'MISSING');
+  console.log('[nvidia] API Key exists:', !!apiKey);
+  console.log('[nvidia] API Key format valid:', apiKey && apiKey.startsWith('nvapi-'));
+  console.log('[nvidia] Messages count:', turns.length);
+  console.log('[nvidia] Max tokens:', maxTokens);
+  
+  if (!apiKey || !apiKey.startsWith('nvapi-')) {
+    const errMsg = 'Invalid NVIDIA API key format. Must start with "nvapi-"';
+    console.error('[nvidia] ERROR:', errMsg);
+    throw new Error(errMsg);
+  }
   
   const client = new OpenAI({ 
     apiKey, 
-    baseURL: 'https://integrate.api.nvidia.com/v1'
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    defaultHeaders: {
+      'User-Agent': 'cue-me/1.0'
+    }
   });
+  
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -55,6 +69,7 @@ async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTok
     }
   });
   
+  console.log('[nvidia] Sending request...');
   try {
     const stream = await client.chat.completions.create({ 
       model, 
@@ -62,6 +77,8 @@ async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTok
       stream: true, 
       max_tokens: maxTokens
     });
+    console.log('[nvidia] Stream opened successfully');
+    
     let full = '';
     for await (const part of stream) {
       const delta = part.choices && part.choices[0] && part.choices[0].delta;
@@ -69,14 +86,17 @@ async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTok
       const d = delta.content;
       if (d) { full += d; onToken(d); }
     }
+    console.log('[nvidia] Request completed successfully');
+    console.log('========== END DEBUG ==========\n');
     return full;
   } catch (err) {
-    console.error('[nvidia] Error details:', {
-      status: err.status,
-      code: err.code,
-      message: err.message,
-      error: err.error
-    });
+    console.error('\n========== NVIDIA API ERROR ==========');
+    console.error('[nvidia] Error type:', err.constructor.name);
+    console.error('[nvidia] Status:', err.status);
+    console.error('[nvidia] Code:', err.code);
+    console.error('[nvidia] Message:', err.message);
+    console.error('[nvidia] Full error:', JSON.stringify(err, null, 2));
+    console.error('========== END ERROR DEBUG ==========\n');
     throw err;
   }
 }
