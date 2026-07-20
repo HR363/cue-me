@@ -13,7 +13,8 @@ const DEFAULTS = {
     anthropic: '', 
     gemini: '', 
     nvidia: process.env.NVIDIA_API_KEY || '', 
-    deepgram: '' 
+    deepgram: '',
+    google_speech: ''
   },
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },

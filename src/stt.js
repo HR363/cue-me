@@ -12,24 +12,46 @@ async function transcribeOpenAI(apiKey, wav, model) {
   return (res.text || '').trim();
 }
 
-async function transcribeGemini(apiKey, wav) {
-  const { GoogleGenAI } = require('@google/genai');
-  const ai = new GoogleGenAI({ apiKey });
-  const res = await ai.models.generateContent({
-    model: 'gemini-1.5-flash',
-    contents: [{ role: 'user', parts: [
-      { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
-      { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
-    ] }]
-  });
-  return ((res && res.text) || '').trim();
+async function transcribeGoogleSpeech(keyJson, wav) {
+  // keyJson is expected to be a JSON string (service account) or an object with credentials
+  try {
+    const { SpeechClient } = require('@google-cloud/speech');
+    let client;
+    if (!keyJson) {
+      client = new SpeechClient(); // rely on GOOGLE_APPLICATION_CREDENTIALS env var
+    } else {
+      let creds = keyJson;
+      if (typeof keyJson === 'string') {
+        try { creds = JSON.parse(keyJson); } catch (e) { creds = null; }
+      }
+      if (creds) client = new SpeechClient({ credentials: creds });
+      else client = new SpeechClient();
+    }
+
+    const audio = { content: wav.toString('base64') };
+    const config = { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'en-US', audioChannelCount: 1 };
+    const request = { audio, config };
+    const [response] = await client.recognize(request);
+    if (!response || !response.results) return '';
+    const transcript = response.results.map(r => (r.alternatives && r.alternatives[0] && r.alternatives[0].transcript) || '').join('\n').trim();
+    return transcript;
+  } catch (e) {
+    // rethrow so caller captures structured info
+    throw e;
+  }
 }
+
+// NOTE: @google/genai (Gemini) does not provide a documented speech-to-text endpoint
+// suitable for raw transcription; using it here for verbatim STT is unreliable. We
+// therefore do not include Gemini as a primary STT provider. If you have a dedicated
+// Google Cloud Speech-to-Text service account, set its JSON in the Settings ->
+// "Google Speech" field (paste the service account JSON). The app will use that.
 
 function createSTT(settings) {
   const keys = settings.apiKeys || {};
   const chain = [];
   if (keys.openai) chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel) });
-  if (keys.gemini) chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  if (keys.google_speech) chain.push({ p: 'google_speech', fn: (wav) => transcribeGoogleSpeech(keys.google_speech, wav) });
 
   return {
     available: chain.length > 0,
@@ -43,7 +65,12 @@ function createSTT(settings) {
           const text = await c.fn(wav);
           return { text, provider: c.p };
         } catch (e) {
-          lastErr = { status: e && e.status, code: e && e.code, message: (e && e.message) || String(e), provider: c.p };
+          // Normalize some useful fields for logging
+          const status = e && (e.status || (e.code && (Number.isInteger(e.code) ? e.code : undefined)));
+          const code = e && e.code;
+          const message = (e && e.message) || (e && e.toString && e.toString()) || String(e);
+          console.error('[stt] provider error', c.p, status, code, message, e && e.response ? e.response : 'no-response');
+          lastErr = { status, code, message, provider: c.p };
         }
       }
       return { text: '', error: lastErr };
