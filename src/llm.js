@@ -30,6 +30,34 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   return full;
 }
 
+async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+  const OpenAI = require('openai');
+  const client = new OpenAI({ apiKey, baseURL: 'https://integrate.api.nvidia.com/v1' });
+  const messages = [{ role: 'system', content: system }];
+  turns.forEach((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      messages.push({ role: 'user', content: [
+        { type: 'text', text: t.text },
+        { type: 'image_url', image_url: { url: imageDataUrl } }
+      ] });
+    } else {
+      messages.push({ role: t.role, content: t.text });
+    }
+  });
+  const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens });
+  let full = '';
+  for await (const part of stream) {
+    const delta = part.choices && part.choices[0] && part.choices[0].delta;
+    if (!delta) continue;
+    // Nemotron/DeepSeek-style reasoning models emit reasoning_content separately from content.
+    // We skip reasoning tokens and only stream the final answer, matching the other providers.
+    const d = delta.content;
+    if (d) { full += d; onToken(d); }
+  }
+  return full;
+}
+
 async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
@@ -91,6 +119,7 @@ function createLLM(settings) {
       if (provider === 'openai') return streamOpenAI(args);
       if (provider === 'anthropic') return streamAnthropic(args);
       if (provider === 'gemini') return streamGemini(args);
+      if (provider === 'nvidia') return streamNvidia(args);
       throw new Error('unknown provider: ' + provider);
     }
   };
