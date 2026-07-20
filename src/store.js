@@ -8,7 +8,13 @@ const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
-  apiKeys: { openai: '', anthropic: '', gemini: '', nvidia: '', deepgram: '' },
+  apiKeys: { 
+    openai: '', 
+    anthropic: '', 
+    gemini: '', 
+    nvidia: process.env.NVIDIA_API_KEY || '', 
+    deepgram: '' 
+  },
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
