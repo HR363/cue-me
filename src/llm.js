@@ -32,6 +32,12 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
 
 async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
   const OpenAI = require('openai');
+  
+  // Debug: log the request details
+  console.log('[nvidia] Endpoint: https://integrate.api.nvidia.com/v1');
+  console.log('[nvidia] Model:', model);
+  console.log('[nvidia] API Key (first 20 chars):', apiKey ? apiKey.substring(0, 20) + '...' : 'MISSING');
+  
   const client = new OpenAI({ 
     apiKey, 
     baseURL: 'https://integrate.api.nvidia.com/v1'
@@ -48,22 +54,31 @@ async function streamNvidia({ apiKey, model, system, turns, imageDataUrl, maxTok
       messages.push({ role: t.role, content: t.text });
     }
   });
-  const stream = await client.chat.completions.create({ 
-    model, 
-    messages, 
-    stream: true, 
-    max_tokens: maxTokens,
-    temperature: 0.7,
-    top_p: 0.9
-  });
-  let full = '';
-  for await (const part of stream) {
-    const delta = part.choices && part.choices[0] && part.choices[0].delta;
-    if (!delta) continue;
-    const d = delta.content;
-    if (d) { full += d; onToken(d); }
+  
+  try {
+    const stream = await client.chat.completions.create({ 
+      model, 
+      messages, 
+      stream: true, 
+      max_tokens: maxTokens
+    });
+    let full = '';
+    for await (const part of stream) {
+      const delta = part.choices && part.choices[0] && part.choices[0].delta;
+      if (!delta) continue;
+      const d = delta.content;
+      if (d) { full += d; onToken(d); }
+    }
+    return full;
+  } catch (err) {
+    console.error('[nvidia] Error details:', {
+      status: err.status,
+      code: err.code,
+      message: err.message,
+      error: err.error
+    });
+    throw err;
   }
-  return full;
 }
 
 async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
