@@ -90,15 +90,15 @@ cue can't help until macOS lets it see and hear. When you first use a feature, m
 
 ### Step 2 — Add your AI key (bring your own)
 
-cue uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**, pick a provider, and paste your key:
+cue uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). You can configure your keys by creating a `.env` file in the root directory (we've provided a `.env` template), or by clicking the **`...`** button in the input box (or pressing `⌘` `,`) to open **Settings**:
 
 | Provider | Get a key | Notes |
 |---|---|---|
 | **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | One key does everything — **but** for the *listening* features the key must have **Whisper / audio** access (a "restricted" project key that only allows chat will give a 403 on transcription). |
 | **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Great for screen & coding help. Claude has no speech-to-text, so add an OpenAI or Gemini key too if you want the listening features. |
-| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. |
+| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. *(Note: cue uses the newer `gemini-2.5-flash` and `gemini-2.5-pro` models).* |
 
-Your key is stored **only on your computer** (in `cue-data.json`) and is sent **only** to that provider. cue has no server and collects nothing.
+Your keys are stored **only on your computer** (in your `.env` file or `cue-data.json`) and are sent **only** to that provider. cue has no server and collects nothing.
 
 ### Step 3 — The Zoom setting (only needed for Zoom)
 

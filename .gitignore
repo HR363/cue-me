@@ -5,3 +5,7 @@ native/systemaudio
 *.log
 .DS_Store
 cue-data.json
+.env
+test-gemini.js
+test-gemini2.js
+test-gemini3.js

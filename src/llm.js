@@ -135,21 +135,41 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
     }
     return { role: t.role === 'assistant' ? 'model' : 'user', parts };
   });
-  const stream = await ai.models.generateContentStream({
-    model, contents, config: { systemInstruction: system, maxOutputTokens: maxTokens }
-  });
-  let full = '';
-  for await (const chunk of stream) {
-    const t = chunk && chunk.text;
-    if (t) { full += t; onToken(t); }
+  try {
+    const stream = await ai.models.generateContentStream({
+      model, contents, config: { systemInstruction: system, maxOutputTokens: maxTokens }
+    });
+    let full = '';
+    for await (const chunk of stream) {
+      const t = chunk && chunk.text;
+      if (t) { full += t; onToken(t); }
+    }
+    return full;
+  } catch (err) {
+    if (err.message && err.message.includes('exception parsing response') && err.status) {
+      if (err.status === 429) {
+        throw new Error("Gemini API Error (429 Too Many Requests). You have hit the rate limit for this model. Pro models have a lower rate limit than Flash models on the free tier.");
+      } else if (err.status === 404) {
+        throw new Error("Gemini API Error (404 Not Found). The requested model is not available.");
+      } else if (err.status === 400) {
+        throw new Error("Gemini API Error (400 Bad Request). This usually means your API key is invalid or your prompt contains unsupported content.");
+      }
+      throw new Error(`Gemini API Error (${err.status}). Rate limit or configuration issue.`);
+    }
+    throw err;
   }
-  return full;
 }
 
 function createLLM(settings) {
-  const provider = settings.provider;
+  const provider = settings.provider || process.env.DEFAULT_PROVIDER || 'openai';
   const keys = settings.apiKeys || {};
-  const apiKey = keys[provider];
+  let apiKey = keys[provider];
+  if (!apiKey) {
+    if (provider === 'openai') apiKey = process.env.OPENAI_API_KEY;
+    if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+    if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY;
+    if (provider === 'nvidia') apiKey = process.env.NVIDIA_API_KEY;
+  }
   const tier = settings.smart ? 'smart' : 'fast';
   const model = (settings.models[provider] || {})[tier];
   const maxTokens = settings.smart ? 1400 : 700;
