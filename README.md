@@ -4,7 +4,7 @@
 
 **An open-source AI copilot that floats over your screen — sees what you see, hears your meetings, and stays hidden from screen shares.**
 
-A free, self-hosted alternative to Cluely. Bring your own AI key (OpenAI · Anthropic · Google Gemini).
+A free, self-hosted alternative to Cluely. Bring your own AI key (OpenAI · Anthropic · Google Gemini · NVIDIA).
 
 <img src="docs/tutorial.png" width="620" alt="cue first-run tutorial" />
 
@@ -95,8 +95,10 @@ cue uses **your own** API key, so it's free to run (you only pay your AI provide
 | Provider | Get a key | Notes |
 |---|---|---|
 | **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | One key does everything — **but** for the *listening* features the key must have **Whisper / audio** access (a "restricted" project key that only allows chat will give a 403 on transcription). |
-| **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Great for screen & coding help. Claude has no speech-to-text, so add an OpenAI or Gemini key too if you want the listening features. |
-| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. *(Note: cue uses the newer `gemini-2.5-flash` and `gemini-2.5-pro` models).* |
+| **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Great for screen & coding help. Claude has no speech-to-text, so add an OpenAI or Google Speech key too if you want the listening features. |
+| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Great for screen & coding help. *(Note: cue uses the newer `gemini-2.5-flash` and `gemini-2.5-pro` models).* Gemini is no longer used for transcription. |
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) | Great for fast inference. Your API key must start with `nvapi-`. |
+| **Google Cloud Speech** | [console.cloud.google.com](https://console.cloud.google.com) | Used **only** for audio transcription (STT). Paste your Service Account JSON into the Google Speech field in Settings. |
 
 Your keys are stored **only on your computer** (in your `.env` file or `cue-data.json`) and are sent **only** to that provider. cue has no server and collects nothing.
 
@@ -134,15 +136,15 @@ cue is an [Electron](https://www.electronjs.org/) app. Everything runs locally e
 - **Your mic ("You")** — `getUserMedia` → downsampled to 16 kHz audio → transcribed.
 - **Meeting audio ("Them")** — `getDisplayMedia` loopback capture of your system's output audio, kept on its own channel so cue knows *who* said what.
 
-Both audio streams are transcribed (OpenAI Whisper or Gemini) and fed, with an optional screenshot, to your AI model. Responses **stream** into the panel word-by-word.
+Both audio streams are transcribed (OpenAI Whisper or Google Cloud Speech) and fed, with an optional screenshot, to your AI model. Responses **stream** into the panel word-by-word.
 
 **The invisibility** is a single macOS window flag: `setContentProtection(true)`, which sets `NSWindowSharingNone`. This asks the window server to exclude cue from screen-capture streams. It's the same mechanism DRM apps and Zoom's own toolbar use. It is **not** a GPU trick or a special overlay layer — and on macOS 15.4+ Apple lets some capture tools ignore it, which is why it's best-effort (see the disclaimer at the top).
 
 ```
 main process ──┬─ overlay window (frameless, transparent, always-on-top, content-protected)
                ├─ screenshot capture (desktopCapturer)
-               ├─ speech-to-text (Whisper / Gemini)      ── "You" + "Them" channels
-               └─ LLM streaming (OpenAI / Anthropic / Gemini)
+               ├─ speech-to-text (Whisper / Google Cloud Speech) ── "You" + "Them" channels
+               └─ LLM streaming (OpenAI / Anthropic / Gemini / NVIDIA)
 renderer ──────┴─ the glass UI + mic capture + system-audio loopback
 ```
 
@@ -154,10 +156,10 @@ renderer ──────┴─ the glass UI + mic capture + system-audio loop
 You probably granted an older build. Because the app is ad-hoc signed, a rebuild changes its identity and macOS stops honoring the old grant (the checkmark can linger). Toggle cue **off and on** in System Settings → Screen Recording, or remove and re-add it.
 
 **A feature returns "403" / "no access to model."**
-Your API key is restricted. Most often it's an OpenAI **project key that only allows chat models** — it works for screen/coding help but 403s on transcription (Whisper). Fix: enable audio/Whisper on the key, use an unrestricted key, or add a Gemini key (cue falls back to it for transcription).
+Your API key is restricted. Most often it's an OpenAI **project key that only allows chat models** — it works for screen/coding help but 403s on transcription (Whisper). Fix: enable audio/Whisper on the key, use an unrestricted key, or add a Google Cloud Speech key (cue falls back to it for transcription).
 
 **Listening does nothing / no transcript.**
-Check Settings shows a transcription-capable key (OpenAI with Whisper, or Gemini). Also make sure Screen Recording is granted (meeting audio needs it).
+Check Settings shows a transcription-capable key (OpenAI with Whisper, or Google Speech). Also make sure Screen Recording is granted (meeting audio needs it).
 
 **cue shows up in my Zoom share.**
 Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3). And remember: on macOS 15.4+ this can still fail — it's best-effort.
