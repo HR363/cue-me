@@ -63,7 +63,7 @@ After that, cue opens normally forever.
 You need [Node.js](https://nodejs.org) 18+ installed. No Xcode required.
 
 ```bash
-git clone https://github.com/Blueturboguy07/cue.git
+git clone https://github.com/HR363/cue-me.git
 cd cue
 npm install
 npm start
@@ -184,5 +184,6 @@ Issues and PRs welcome. cue is intentionally small and readable — `main.js` (a
 Built as an open-source study of how tools like **Cluely** and **Interview Coder** work. Modeled on the open-source clones `pickle-com/glass` and `sohzm/cheating-daddy`.
 
 **License: [GPL-3.0-or-later](LICENSE).**
-#   c u e - m e  
+#   c u e - m e 
+ 
  

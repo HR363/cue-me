@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>cue-me — Disc Image Cue Generator</title>
+  <meta name="description" content="A precise CLI tool for generating and validating .cue files from disc images.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #050508;
+      --slate: #0c0c12;
+      --charcoal: #13131c;
+      --ash: #1e1e2a;
+      --dust: #2a2a3a;
+      --fog: #6b7280;
+      --pearl: #a1a1aa;
+      --bone: #d4d4d8;
+      --snow: #f4f4f5;
+      --ember: #ff6b35;
+      --ember-dim: rgba(255,107,53,0.08);
+      --ember-glow: rgba(255,107,53,0.25);
+      --ember-pulse: rgba(255,107,53,0.4);
+      --void: rgba(0,0,0,0.85);
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--ink);
+      color: var(--bone);
+      overflow-x: hidden;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* === TEXTURE LAYERS === */
+    .texture-stack {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .texture-stack::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='5' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+      background-size: 256px 256px;
+      opacity: 0.35;
+    }
+    .texture-stack::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 600px 400px at 15% 20%, rgba(255,107,53,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 350px at 85% 75%, rgba(255,107,53,0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 300px at 50% 50%, rgba(255,107,53,0.02) 0%, transparent 60%);
+    }
+
+    /* === SCANLINES === */
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9998;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      opacity: 0.15;
+    }
+
+    /* === VIGNETTE === */
+    .vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9997;
+      background: radial-gradient(ellipse at center, transparent 40%, var(--ink) 100%);
+      opacity: 0.6;
+    }
+
+    /* === PARTICLES === */
+    .dust-field {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      overflow: hidden;
+    }
+    .dust-mote {
+      position: absolute;
+      width: 2px; height: 2px;
+      background: var(--ember);
+      border-radius: 50%;
+      opacity: 0;
+      box-shadow: 0 0 6px var(--ember-glow);
+      animation: drift linear infinite;
+    }
+    @keyframes drift {
+      0% { opacity: 0; transform: translateY(110vh) translateX(0) scale(0.5); }
+      15% { opacity: 0.7; }
+      85% { opacity: 0.5; }
+      100% { opacity: 0; transform: translateY(-10vh) translateX(40px) scale(1.2); }
+    }
+
+    /* === NAV === */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 1.25rem 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      mix-blend-mode: difference;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .brand-mark {
+      width: 32px; height: 32px;
+      border: 1.5px solid var(--bone);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .brand-mark::before {
+      content: '';
+      position: absolute;
+      width: 8px; height: 8px;
+      background: var(--ember);
+      border-radius: 50%;
+      animation: brand-pulse 3s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.6); opacity: 0.4; }
+    }
+    .brand-text {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--bone);
+      letter-spacing: 0.05em;
+      text-transform: lowercase;
+    }
+    .brand-text span { color: var(--fog); }
+    .nav-ghost {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--fog);
+      text-decoration: none;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: color 0.4s;
+      position: relative;
+    }
+    .nav-ghost::after {
+      content: '';
+      position: absolute;
+      bottom: -4px; left: 0;
+      width: 0; height: 1px;
+      background: var(--ember);
+      transition: width 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+    }
+    .nav-ghost:hover { color: var(--bone); }
+    .nav-ghost:hover::after { width: 100%; }
+
+    /* === HERO === */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 6rem 2rem 3rem;
+      position: relative;
+      z-index: 2;
+    }
+    .hero-tag {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--ember);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      opacity: 0;
+      animation: fade-up 0.8s 0.2s forwards;
+    }
+    .hero-tag::before {
+      content: '';
+      width: 24px; height: 1px;
+      background: var(--ember);
+      animation: line-grow 1s 0.5s forwards;
+      transform-origin: left;
+      transform: scaleX(0);
+    }
+    @keyframes line-grow { to { transform: scaleX(1); } }
+    .hero h1 {
+      font-size: clamp(4rem, 12vw, 8rem);
+      font-weight: 700;
+      line-height: 0.9;
+      letter-spacing: -0.04em;
+      margin-bottom: 1.5rem;
+      text-align: center;
+      opacity: 0;
+      animation: fade-up 1s 0.4s forwards;
+    }
+    .hero h1 .accent-char {
+      color: var(--ember);
+      display: inline-block;
+      position: relative;
+    }
+    .hero h1 .accent-char::after {
+      content: '';
+      position: absolute;
+      bottom: 0.05em; left: -0.05em; right: -0.05em;
+      height: 0.08em;
+      background: var(--ember);
+      opacity: 0.3;
+      transform: scaleX(0);
+      transform-origin: left;
+      animation: underline-reveal 1.2s 1s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    }
+    @keyframes underline-reveal { to { transform: scaleX(1); } }
+    .hero-sub {
+      font-size: 1.1rem;
+      color: var(--fog);
+      line-height: 1.7;
+      max-width: 520px;
+      text-align: center;
+      margin-bottom: 3rem;
+      opacity: 0;
+      animation: fade-up 0.8s 0.7s forwards;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      opacity: 0;
+      animation: fade-up 0.8s 0.9s forwards;
+    }
+    .btn-ember {
+      padding: 0.9rem 2rem;
+      background: var(--ember);
+      border: none;
+      border-radius: 4px;
+      color: var(--ink);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-ember::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s;
+    }
+    .btn-ember:hover::before { transform: translateX(100%); }
+    .btn-ember:hover {
+      box-shadow: 0 0 30px var(--ember-glow), 0 0 60px rgba(255,107,53,0.1);
+      transform: translateY(-1px);
+    }
+    .btn-ghost {
+      padding: 0.9rem 2rem;
+      background: transparent;
+      border: 1px solid var(--dust);
+      border-radius: 4px;
+      color: var(--pearl);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .btn-ghost:hover {
+      border-color: var(--ember);
+      color: var(--bone);
+      background: var(--ember-dim);
+    }
+    @keyframes fade-up {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* === SCROLL INDICATOR === */
+    .scroll-hint {
+      position: absolute;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      opacity: 0;
+      animation: fade-up 0.6s 1.4s forwards;
+    }
+    .scroll-hint span {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--fog);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    .scroll-line {
+      width: 1px;
+      height: 40px;
+      background: linear-gradient(to bottom, var(--ember), transparent);
+      animation: scroll-bob 2s ease-in-out infinite;
+    }
+    @keyframes scroll-bob {
+      0%, 100% { transform: translateY(0); opacity: 1; }
+      50% { transform: translateY(8px); opacity: 0.5; }
+    }
+
+    /* === SECTION DIVIDER === */
+    .section-rule {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--dust), transparent);
+      position: relative;
+      z-index: 2;
+    }
+    .section-rule::after {
+      content: '';
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 6px; height: 6px;
+      background: var(--ember);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--ember-glow);
+    }
+
+    /* === CONCEPT SECTION === */
+    .concept {
+      padding: 8rem 2rem;
+      position: relative;
+      z-index: 2;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .concept-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .concept-visual {
+      position: relative;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .orbit-ring {
+      position: absolute;
+      border: 1px solid var(--dust);
+      border-radius: 50%;
+      animation: orbit-spin linear infinite;
+    }
+    .orbit-ring:nth-child(1) {
+      width: 200px; height: 200px;
+      animation-duration: 20s;
+      border-color: rgba(255,107,53,0.15);
+    }
+    .orbit-ring:nth-child(2) {
+      width: 280px; height: 280px;
+      animation-duration: 30s;
+      animation-direction: reverse;
+      border-color: rgba(255,107,53,0.1);
+    }
+    .orbit-ring:nth-child(3) {
+      width: 360px; height: 360px;
+      animation-duration: 40s;
+      border-color: rgba(255,107,53,0.05);
+    }
+    @keyframes orbit-spin { to { transform: rotate(360deg); } }
+    .orbit-dot {
+      position: absolute;
+      width: 8px; height: 8px;
+      background: var(--ember);
+      border-radius: 50%;
+      box-shadow: 0 0 12px var(--ember-glow);
+    }
+    .orbit-ring:nth-child(1) .orbit-dot { top: -4px; left: 50%; transform: translateX(-50%); }
+    .orbit-ring:nth-child(2) .orbit-dot { bottom: -4px; left: 50%; transform: translateX(-50%); }
+    .orbit-ring:nth-child(3) .orbit-dot { right: -4px; top: 50%; transform: translateY(-50%); }
+    .concept-center {
+      width: 80px; height: 80px;
+      border: 2px solid var(--ember);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 2;
+      background: var(--ink);
+    }
+    .concept-center::before {
+      content: '';
+      width: 20px; height: 20px;
+      background: var(--ember);
+      border-radius: 50%;
+      animation: center-pulse 3s ease-in-out infinite;
+    }
+    @keyframes center-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.7); opacity: 0.5; }
+    }
+    .concept-text h2 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    .concept-text h2 .highlight {
+      color: var(--ember);
+      position: relative;
+    }
+    .concept-text p {
+      color: var(--fog);
+      line-height: 1.8;
+      font-size: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .concept-meta {
+      display: flex;
+      gap: 2rem;
+      margin-top: 2rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--ash);
+    }
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .meta-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--fog);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    .meta-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.1rem;
+      color: var(--bone);
+      font-weight: 500;
+    }
+
+    /* === TERMINAL === */
+    .terminal-zone {
+      padding: 6rem 2rem;
+      position: relative;
+      z-index: 2;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .terminal-frame {
+      background: var(--slate);
+      border: 1px solid var(--ash);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    .terminal-frame::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--ember), transparent);
+      opacity: 0.4;
+    }
+    .terminal-head {
+      padding: 0.875rem 1.25rem;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--ash);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .term-btn {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 1px solid var(--dust);
+    }
+    .term-title {
+      margin-left: 0.75rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--fog);
+      letter-spacing: 0.05em;
+    }
+    .term-body {
+      padding: 1.5rem 1.25rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 2;
+      color: var(--pearl);
+    }
+    .term-prompt { color: var(--ember); }
+    .term-cmd { color: var(--bone); }
+    .term-comment { color: var(--fog); }
+    .term-ok { color: #34d399; }
+    .term-blink {
+      display: inline-block;
+      width: 7px; height: 15px;
+      background: var(--ember);
+      animation: blink-cursor 1.1s step-end infinite;
+      vertical-align: middle;
+      margin-left: 2px;
+    }
+    @keyframes blink-cursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* === CAPABILITIES === */
+    .capabilities {
+      padding: 8rem 2rem;
+      position: relative;
+      z-index: 2;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .cap-header {
+      margin-bottom: 4rem;
+    }
+    .cap-header h2 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.02em;
+    }
+    .cap-header p {
+      color: var(--fog);
+      font-size: 1rem;
+      max-width: 500px;
+    }
+    .cap-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--ash);
+      border: 1px solid var(--ash);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .cap-cell {
+      background: var(--slate);
+      padding: 2.5rem 2rem;
+      transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+      position: relative;
+      overflow: hidden;
+    }
+    .cap-cell::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 2px;
+      background: var(--ember);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+    }
+    .cap-cell:hover {
+      background: var(--charcoal);
+    }
+    .cap-cell:hover::before {
+      transform: scaleX(1);
+    }
+    .cap-num {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--ember);
+      letter-spacing: 0.1em;
+      margin-bottom: 1.25rem;
+      display: block;
+    }
+    .cap-cell h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--bone);
+    }
+    .cap-cell p {
+      color: var(--fog);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* === FOOTER === */
+    footer {
+      padding: 4rem 2rem 2rem;
+      position: relative;
+      z-index: 2;
+      text-align: center;
+    }
+    .footer-rule {
+      width: 40px;
+      height: 2px;
+      background: var(--ember);
+      margin: 0 auto 2rem;
+      opacity: 0.5;
+    }
+    .footer-brand {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1rem;
+      color: var(--bone);
+      margin-bottom: 1rem;
+      letter-spacing: 0.05em;
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+    .footer-links a {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--fog);
+      text-decoration: none;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: color 0.3s;
+    }
+    .footer-links a:hover { color: var(--ember); }
+    .footer-copy {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--dust);
+      letter-spacing: 0.05em;
+    }
+
+    /* === SCROLL REVEAL === */
+    .reveal {
+      opacity: 0;
+      transform: translateY(40px);
+      transition: all 0.9s cubic-bezier(0.25,0.46,0.45,0.94);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* === RESPONSIVE === */
+    @media (max-width: 768px) {
+      .concept-grid { grid-template-columns: 1fr; gap: 3rem; }
+      .cap-grid { grid-template-columns: 1fr; }
+      .hero h1 { font-size: clamp(3rem, 14vw, 5rem); }
+      nav { padding: 1rem 1.5rem; }
+      .hero-actions { flex-direction: column; width: 100%; max-width: 280px; }
+      .btn-ember, .btn-ghost { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="texture-stack"></div>
+  <div class="scanlines"></div>
+  <div class="vignette"></div>
+  <div class="dust-field" id="dustField"></div>
+
+  <nav>
+    <a href="#" class="brand">
+      <div class="brand-mark"></div>
+      <span class="brand-text">cue<span>-me</span></span>
+    </a>
+    <a href="https://github.com/HR363/cue-me" class="nav-ghost" target="_blank">GitHub</a>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-tag">Open Source CLI</div>
+    <h1>cue<span class="accent-char">-</span>me</h1>
+    <p class="hero-sub">
+      A precise, no-nonsense tool for generating and validating .cue files from disc images. Built for archivists, preservationists, and anyone who needs their cues done right.
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/HR363/cue-me" class="btn-ember" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        View Source
+      </a>
+      <a href="#install" class="btn-ghost">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Install
+      </a>
+    </div>
+    <div class="scroll-hint">
+      <span>Scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <div class="section-rule"></div>
+
+  <section class="concept">
+    <div class="concept-grid">
+      <div class="concept-visual reveal">
+        <div class="orbit-ring"><div class="orbit-dot"></div></div>
+        <div class="orbit-ring"><div class="orbit-dot"></div></div>
+        <div class="orbit-ring"><div class="orbit-dot"></div></div>
+        <div class="concept-center"></div>
+      </div>
+      <div class="concept-text reveal">
+        <h2>Disc images deserve <span class="highlight">proper cues</span></h2>
+        <p>
+          Every disc image needs a companion .cue file to describe its track layout, sector sizes, and session boundaries. Without one, your archive is incomplete. cue-me ensures every .bin, .iso, and .img gets a precisely formatted cue sheet — automatically, correctly, every time.
+        </p>
+        <p>
+          No guesswork. No hand-editing. Just clean, spec-compliant cue files generated from your disc images with a single command.
+        </p>
+        <div class="concept-meta">
+          <div class="meta-item">
+            <span class="meta-label">License</span>
+            <span class="meta-value">MIT</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Language</span>
+            <span class="meta-value">Python</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Platform</span>
+            <span class="meta-value">Any</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section-rule"></div>
+
+  <section class="terminal-zone" id="install">
+    <div class="terminal-frame reveal">
+      <div class="terminal-head">
+        <div class="term-btn" style="border-color:#ef4444;"></div>
+        <div class="term-btn" style="border-color:#fbbf24;"></div>
+        <div class="term-btn" style="border-color:#34d399;"></div>
+        <span class="term-title">~/cue-me — zsh</span>
+      </div>
+      <div class="term-body">
+        <div><span class="term-prompt">$</span> <span class="term-cmd">cue-me generate</span> <span class="term-comment"># scan and create cues</span></div>
+        <div><span class="term-ok">✓</span>  scanning ./discs/ ...</div>
+        <div><span class="term-ok">✓</span>  found 47 image files</div>
+        <div><span class="term-ok">✓</span>  generated 47 .cue files (0.8s)</div>
+        <div><span class="term-ok">✓</span>  all cues validated</div>
+        <div style="margin-top:1.5rem;"><span class="term-prompt">$</span> <span class="term-cmd">cue-me validate</span> <span class="term-comment"># verify integrity</span></div>
+        <div><span class="term-ok">✓</span>  47/47 cues passed</div>
+        <div style="margin-top:1.5rem;"><span class="term-prompt">$</span> <span class="term-cmd">cue-me info game.bin</span> <span class="term-comment"># inspect metadata</span></div>
+        <div>   format:  BIN/CUE (2352 bytes/sector)</div>
+        <div>   tracks:  1 data track</div>
+        <div>   size:    650 MB</div>
+        <div style="margin-top:1.5rem;"><span class="term-prompt">$</span> <span class="term-blink"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section-rule"></div>
+
+  <section class="capabilities">
+    <div class="cap-header reveal">
+      <h2>What it does</h2>
+      <p>Six focused capabilities. No bloat. No dependencies you don't need.</p>
+    </div>
+    <div class="cap-grid">
+      <div class="cap-cell reveal">
+        <span class="cap-num">01</span>
+        <h3>Auto-Generate</h3>
+        <p>Scan directories recursively and generate .cue files for every compatible disc image in one pass.</p>
+      </div>
+      <div class="cap-cell reveal">
+        <span class="cap-num">02</span>
+        <h3>Smart Detection</h3>
+        <p>Automatically detects format, track layout, and sector size. No manual configuration for standard images.</p>
+      </div>
+      <div class="cap-cell reveal">
+        <span class="cap-num">03</span>
+        <h3>Validation</h3>
+        <p>Verify existing cue files against their disc images. Catch mismatches before they corrupt your archive.</p>
+      </div>
+      <div class="cap-cell reveal">
+        <span class="cap-num">04</span>
+        <h3>Metadata</h3>
+        <p>Extract and display track counts, formats, sizes, and session info with a single command.</p>
+      </div>
+      <div class="cap-cell reveal">
+        <span class="cap-num">05</span>
+        <h3>Format Coverage</h3>
+        <p>Works with BIN/CUE, ISO, IMG, and other common disc formats. Handles multiple sector sizes.</p>
+      </div>
+      <div class="cap-cell reveal">
+        <span class="cap-num">06</span>
+        <h3>Speed</h3>
+        <p>Process hundreds of files in seconds. Minimal memory footprint. Built for large collections.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-rule"></div>
+    <div class="footer-brand">cue-me</div>
+    <div class="footer-links">
+      <a href="https://github.com/HR363/cue-me" target="_blank">Repository</a>
+      <a href="#">Issues</a>
+      <a href="#">Releases</a>
+    </div>
+    <div class="footer-copy">MIT License — 2026</div>
+  </footer>
+
+  <script>
+    // Dust motes
+    const field = document.getElementById('dustField');
+    for (let i = 0; i < 25; i++) {
+      const mote = document.createElement('div');
+      mote.className = 'dust-mote';
+      mote.style.left = Math.random() * 100 + '%';
+      mote.style.animationDuration = (12 + Math.random() * 16) + 's';
+      mote.style.animationDelay = Math.random() * 10 + 's';
+      field.appendChild(mote);
+    }
+
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const t = document.querySelector(a.getAttribute('href'));
+        if (t) t.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+  </script>
+
+</body>
+</html>
